@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+    <meta name="theme-color" content="#0a0716" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Avenue Run" />
+    <meta name="description" content="Avenue Run — a 3-lane neon endless runner through NYC, Jamaica Ave, Liberty Ave and the Guyana East Bank. Pick your runner, pick your difficulty, chase the combo." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <title>Avenue Run</title>
+  </head>
+  <body>
+    <main id="app">
+      <div id="game" aria-label="Avenue Run game"></div>
+
+      <header class="topbar">
+        <div class="brand"><span>AR</span><b>AVENUE RUN</b></div>
+        <div class="wallet"><span>◆</span> <b id="bank">0</b></div>
+        <button id="install" class="ghost" hidden>Install</button>
+        <button id="sound" class="icon" aria-label="Toggle sound">♫</button>
+        <button id="pause" class="icon" aria-label="Pause game">Ⅱ</button>
+      </header>
+
+      <section id="menu" class="sheet">
+        <p class="eyebrow">NEON CITY NEVER STOPS</p>
+        <h1>AVENUE<br><i>RUN</i></h1>
+        <p id="tagline">Dodge the rush. Build the combo. Own the avenue.</p>
+
+        <div class="stats">
+          <div><small>BEST</small><b id="best">0</b></div>
+          <div><small>RUNS</small><b id="runs">0</b></div>
+          <div><small>COINS</small><b id="menuBank">0</b></div>
+        </div>
+
+        <div class="panel">
+          <p class="label">DIFFICULTY</p>
+          <div id="diffPick" class="picks"></div>
+        </div>
+
+        <div class="panel">
+          <p class="label">LOCATION</p>
+          <div id="locPick" class="picks two"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><p class="label">YOUR RUNNER</p><button id="customize" class="mini">CUSTOMIZE ›</button></div>
+          <div id="charRow" class="charrow"></div>
+        </div>
+
+        <button id="play" class="primary">RUN NOW <span>›</span></button>
+        <div id="challengeBanner" class="challenge" hidden></div>
+        <p class="controls">Swipe / arrows to change lanes · up to jump · down to roll · P to pause</p>
+      </section>
+
+      <section id="customizer" class="sheet" hidden>
+        <p class="eyebrow">BUILD YOUR RUNNER</p>
+        <h2 class="small">STYLE</h2>
+        <div id="charPreview" class="preview"></div>
+        <div class="panel"><p class="label">BODY</p><div id="pickGender" class="picks two"></div></div>
+        <div class="panel"><p class="label">SKIN TONE</p><div id="pickSkin" class="swatches"></div></div>
+        <div class="panel"><p class="label">HAIRSTYLE</p><div id="pickHair" class="picks"></div></div>
+        <div class="panel"><p class="label">HAIR COLOR</p><div id="pickHairColor" class="swatches"></div></div>
+        <div class="panel"><p class="label">OUTFIT</p><div id="pickOutfit" class="swatches"></div></div>
+        <button id="saveChar" class="primary">DONE <span>✓</span></button>
+      </section>
+
+      <section id="result" class="sheet" hidden>
+        <p class="eyebrow">RUN COMPLETE · <b id="resultWhere">NEW YORK CITY</b></p>
+        <h2 id="resultScore">0</h2><p id="resultLabel">POINTS</p>
+        <div class="stats">
+          <div><small>BEST</small><b id="resultBest">0</b></div>
+          <div><small>COINS</small><b id="resultCoins">0</b></div>
+          <div><small>MAX COMBO</small><b id="resultCombo">x1</b></div>
+        </div>
+        <button id="again" class="primary">RUN IT BACK <span>↻</span></button>
+        <div class="buttonrow"><button id="share" class="secondary">SHARE SCORE</button><button id="home" class="secondary">HOME</button></div>
+      </section>
+
+      <aside id="mission" hidden><small>RUN MISSION</small><b id="missionText">Reach 1,000 points</b><div><span id="missionBar"></span></div></aside>
+      <div id="toast" role="status"></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
