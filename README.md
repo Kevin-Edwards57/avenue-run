@@ -58,6 +58,13 @@ Enemies: **stomp Goombas** by landing on them for bonus coins, jump barriers/con
 - All art is drawn procedurally at runtime (no image assets) — the character is rendered from your customization every frame.
 - Deployed on [Vercel](https://vercel.com/) as an installable PWA.
 
+## 🏗️ Architecture
+
+Curious how it's built? **[ARCHITECTURE.md](ARCHITECTURE.md)** documents the game
+loop, the layered procedural rendering pipeline, the `Pen` abstraction that draws
+the character to both the game canvas and the menu previews, the forgiving
+collision model, and the data/persistence flow — with diagrams.
+
 ## 💻 Local development
 
 ```bash
