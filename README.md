@@ -1,89 +1,84 @@
-# 🏙️ Avenue Run
+# Avenue Run
 
-A fast, neon **side‑scrolling endless runner** — a Mario × Subway‑Surfers mashup you can play right in your browser or install to your phone. Dodge the rush, stomp the Goombas, grab coins, ride power‑ups, and rack up combos down four real avenues.
+A neon side-scrolling endless runner you can play in the browser or install to
+your phone. It's a Mario-meets-Subway-Surfers mashup: dodge the rush, stomp
+Goombas, grab coins, ride power-ups and build combos down four avenues.
 
-### ▶️ Play now: **[avenue-run.vercel.app](https://avenue-run.vercel.app)**
+**Play it: [avenue-run.vercel.app](https://avenue-run.vercel.app)**
 
-_Works on any phone — just open the link and tap **RUN NOW**. Tap **Add to Home Screen** to install it as a full‑screen app._
+Open the link and tap **RUN NOW**. On mobile you can add it to your home screen
+to run it full screen.
 
----
-
-## 📸 Screenshots
+## Screenshots
 
 | Menu | Gameplay |
 | :--: | :--: |
-| <img src="screenshots/menu.png" width="280" alt="Avenue Run menu — difficulty, locations and your runner" /> | <img src="screenshots/gameplay.png" width="280" alt="Jumping over a Goomba while grabbing a coin arc" /> |
-| **Jetpack** | **Character Customizer** |
-| <img src="screenshots/jetpack.png" width="280" alt="Flying over the skyline with the jetpack, collecting sky coins" /> | <img src="screenshots/customizer.png" width="280" alt="Build your runner — body, skin tone, hairstyle, hair color and outfit" /> |
+| <img src="screenshots/menu.png" width="280" alt="Menu with difficulty, locations and your runner" /> | <img src="screenshots/gameplay.png" width="280" alt="Jumping over a Goomba while grabbing a coin arc" /> |
+| **Jetpack** | **Character customizer** |
+| <img src="screenshots/jetpack.png" width="280" alt="Flying over the skyline with the jetpack, collecting sky coins" /> | <img src="screenshots/customizer.png" width="280" alt="Build your runner: body, skin tone, hairstyle, hair color, outfit" /> |
 
----
+## Features
 
-## ✨ Features
+- Four difficulties (Chill, Avenue, Rush, Mayhem), each with its own speed,
+  acceleration and obstacle density.
+- Four locations, each with its own skyline and palette:
+  - New York City — Times Square / midtown neon
+  - Jamaica Avenue — Queens, under the elevated J train
+  - Liberty Avenue — Little Guyana, Richmond Hill (palms and string lights)
+  - Guyana, East Bank — Demerara, the coast road
+- A character customizer: male/female body, 7 skin tones, 8 hairstyles (short,
+  afro, braids, locs, ponytail, bun, cap, bald), 9 hair colors and 8 outfits.
+- Three hearts and forgiving hitboxes, so a graze won't instantly end a run; a
+  hit costs a heart and gives you a brief window of invincibility.
+- Combos, missions, coins, and a best score and coin bank saved locally.
+- Installable as a PWA with offline support and shareable challenge links.
 
-- **4 difficulties** — `CHILL`, `AVENUE`, `RUSH`, `MAYHEM` — each with its own speed, acceleration and obstacle density.
-- **4 locations**, each with its own skyline, palette and vibe:
-  - 🗽 **New York City** — Times Square / midtown neon
-  - 🚆 **Jamaica Avenue** — Queens, under the elevated J train
-  - 🪔 **Liberty Avenue** — Little Guyana, Richmond Hill (palms + string lights)
-  - 🌴 **Guyana · East Bank** — Demerara, the coast road
-- **Full character customizer** — male/female body, **7 skin tones**, **8 hairstyles** (short, afro, braids, locs, ponytail, bun, cap, bald), **9 hair colors** and **8 outfits**.
-- **3 hearts + forgiving hitboxes** — a graze won't instantly end your run; a hit costs a heart with brief invincibility.
-- **Combos, missions, coins** and a persistent best score / coin bank (saved locally).
-- **Installable PWA** with offline support and share‑a‑challenge links.
-
-## 🎮 Controls
+## Controls
 
 | Action | Touch | Keyboard |
 | --- | --- | --- |
-| Jump / double‑jump | **Tap** | `Space` / `↑` / `W` |
-| Slide | **Swipe down** | `↓` / `S` |
-| Pause | — | `P` |
+| Jump / double jump | Tap | Space / Up / W |
+| Slide | Swipe down | Down / S |
+| Pause | — | P |
 
-## 🚀 Power‑ups
+## Power-ups
 
-| | Power‑up | Effect |
-| :--: | --- | --- |
-| 🚀 | **Jetpack** | Blast into the sky and fly over everything through a trail of coins |
-| 🛹 | **Hoverboard** | Rides under your feet and absorbs one hit |
-| ⭐ | **Super Star** | Invincible — smash straight through obstacles |
-| 🍄 | **1‑UP Mushroom** | Extra heart |
-| 🧲 | **Magnet** | Pulls in nearby coins |
-| 👟 | **Super Sneakers** | Higher jumps |
+| Power-up | Effect |
+| --- | --- |
+| Jetpack | Fly over everything through a trail of coins |
+| Hoverboard | Absorbs one hit |
+| Super Star | Invincible; smash straight through obstacles |
+| 1-UP Mushroom | Adds a heart |
+| Magnet | Pulls in nearby coins |
+| Super Sneakers | Higher jumps |
 
-Enemies: **stomp Goombas** by landing on them for bonus coins, jump barriers/cones, and **slide under** the brick gates.
+Enemies: stomp Goombas by landing on them for bonus coins, jump the barriers and
+cones, and slide under the brick gates.
 
-## 🛠️ Tech
+## Built with
 
-- [Phaser 3](https://phaser.io/) game engine · TypeScript · [Vite](https://vitejs.dev/)
-- All art is drawn procedurally at runtime (no image assets) — the character is rendered from your customization every frame.
-- Deployed on [Vercel](https://vercel.com/) as an installable PWA.
+- Phaser 3, TypeScript and Vite.
+- All art is drawn procedurally at runtime — no image assets. The runner is
+  rendered from your customization every frame.
+- Deployed on Vercel as an installable PWA.
 
-## 🏗️ Architecture
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the system architecture: the game
+loop, the rendering pipeline, the collision model, and how state flows between
+the menu, the scene and local storage.
 
-Curious how it's built? **[ARCHITECTURE.md](ARCHITECTURE.md)** documents the game
-loop, the layered procedural rendering pipeline, the `Pen` abstraction that draws
-the character to both the game canvas and the menu previews, the forgiving
-collision model, and the data/persistence flow — with diagrams.
-
-## 💻 Local development
+## Development
 
 ```bash
 npm install
-npm run dev      # start the dev server (http://localhost:5173)
+npm run dev      # dev server at http://localhost:5173
 npm run build    # type-check + production build to dist/
 npm run preview  # preview the production build
 ```
 
-## 🌐 Deploy
-
-Push to Vercel (or import the repo):
+## Deploy
 
 ```bash
 npx vercel --prod
 ```
 
-The included `vercel.json` builds with `npm run build` and serves `dist/`.
-
----
-
-Built with ☕ and neon. Chase the combo. Own the avenue.
+`vercel.json` builds with `npm run build` and serves `dist/`.

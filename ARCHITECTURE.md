@@ -1,46 +1,37 @@
-# 🏗️ Avenue Run — Architecture
+# System Architecture
 
-This document describes how Avenue Run is put together: the runtime layers, the
-game loop, the rendering pipeline, the physics/collision model, and the data
-flow between the menu, the game scene, and persistent storage.
+Avenue Run is a browser game built with Phaser 3, TypeScript and Vite. It runs
+entirely on the client: no server, no database, no image assets. This document
+explains how the pieces fit together.
 
-> **TL;DR** — A single [Phaser 3](https://phaser.io/) `Scene` runs a fixed set of
-> systems every frame (input → physics → spawn → collision → score → render).
-> All art is drawn **procedurally** (no image assets) through a small `Pen`
-> abstraction so the *same* character-drawing code renders both the in-game
-> player (Phaser `Graphics`) and the menu previews (HTML `Canvas2D`). Config
-> lives in plain data tables (`DIFFS`, `THEMES`, customization palettes); a tiny
-> `Save` object in `localStorage` is the only persistent state.
+## Overview
 
----
-
-## 1. High-level structure
-
-The whole game is one Vite + TypeScript app. `index.html` provides the DOM
-shell (menus, HUD chrome), `src/main.ts` contains all game logic, and
-`src/style.css` styles the DOM overlay.
+The game is a 2D side-scroller. A single Phaser scene owns everything and runs
+the same sequence of steps on every frame: read input, update physics, spawn
+obstacles, resolve collisions, update the score, then draw. The DOM handles the
+menus and HUD chrome; the canvas handles the world.
 
 ```mermaid
 flowchart TB
-  subgraph DOM["index.html — DOM overlay (styled by style.css)"]
-    TOPBAR["Top bar: logo · wallet · sound · pause"]
-    MENU["#menu / #customizer / #result sheets"]
-    HUDDOM["#mission · #toast"]
+  subgraph DOM["index.html (styled by style.css)"]
+    TOPBAR["Top bar: logo, wallet, sound, pause"]
+    MENU["Menu / Customizer / Result sheets"]
+    HUDDOM["Mission card, toast"]
   end
 
   subgraph APP["src/main.ts"]
     direction TB
-    CONFIG["Config data<br/>DIFFS · THEMES · SKINS · HAIRS · OUTFITS"]
-    SAVE["Persistence<br/>loadSave / persist → localStorage"]
-    SYNTH["Synth<br/>(WebAudio SFX + music)"]
-    RUNNER["Runner extends Phaser.Scene<br/>(the game loop + all systems)"]
-    DRAW["Procedural drawing<br/>Pen · drawCharacter · renderCharPreview"]
-    WIRING["Menu wiring<br/>difficulty/location/customizer + PWA"]
+    CONFIG["Config tables: DIFFS, THEMES, palettes"]
+    SAVE["Save/load (localStorage)"]
+    SYNTH["Synth (WebAudio)"]
+    RUNNER["Runner (Phaser.Scene)"]
+    DRAW["Drawing: Pen, drawCharacter, previews"]
+    WIRING["Menu wiring + PWA setup"]
   end
 
-  CANVAS["Phaser.Game → &lt;canvas&gt; (#game)"]
+  CANVAS["Phaser.Game canvas (#game)"]
 
-  MENU -->|"clicks select difficulty / theme / char"| WIRING
+  MENU -->|select difficulty / theme / character| WIRING
   WIRING --> SAVE
   WIRING -->|start run| RUNNER
   CONFIG --> RUNNER
@@ -50,223 +41,176 @@ flowchart TB
   RUNNER --> CANVAS
   DRAW --> CANVAS
   DRAW -->|previews| MENU
-  RUNNER -->|score/coins/mission| HUDDOM
+  RUNNER -->|score, coins, mission| HUDDOM
 ```
 
-**Two rendering surfaces, one screen.** The `<canvas>` (Phaser) draws the world
-and the in-game HUD text; the DOM overlay (menus, top bar, toasts, mission card)
-sits on top with a higher `z-index`. Menus talk to the game by calling
-`Runner.start()` and by mutating the shared `save` object; the game talks back by
-updating DOM elements (score bank, mission bar, toasts).
+The canvas (Phaser) draws the world and the in-game HUD text. The DOM overlay
+(menus, top bar, mission card, toasts) sits above it with a higher `z-index`.
+The menu talks to the game by calling `Runner.start()` and by writing to the
+shared `save` object; the game talks back by updating DOM elements.
 
----
+## Project layout
 
-## 2. Module map (`src/main.ts`)
-
-| Section | Responsibility |
+| Path | Purpose |
 | --- | --- |
-| **Types** | `Kind`, `Mover`, `Char`, `Save`, `Part`, `Diff`, `Theme`, `Pose`, `Pen` |
-| **Config tables** | `DIFFS[]` (speed/accel/spawn), `THEMES[]` (palette/skyline), `SKINS`/`HAIR_COLORS`/`OUTFITS`/`HAIRS` |
-| **Persistence** | `loadSave()` / `persist()` — validates + reads/writes `localStorage["avenue-save"]` |
-| **`Synth`** | WebAudio background loop + one-shot SFX (jump, coin, stomp, power-up…) |
-| **`Runner`** | The `Phaser.Scene`: state, game loop, physics, spawning, collision, power-ups, particles, rendering |
-| **Drawing** | `Pen` interface + `phaserPen`/`canvasPen`, `drawCharacter`/`drawHair`, `renderCharPreview` |
-| **Boot + wiring** | `new Phaser.Game(...)`, menu/difficulty/location/customizer event handlers, PWA install + service worker |
+| `index.html` | DOM shell: menus, top bar, mission card, toast |
+| `src/main.ts` | All game logic |
+| `src/style.css` | Styles for the DOM overlay |
+| `public/` | PWA manifest, service worker, icon |
+| `vercel.json` | Build and serve config for hosting |
 
-It is deliberately a **single file** — small enough to keep the whole loop in
-view, with clear sections instead of cross-file indirection.
+`main.ts` is a single file. The game is small enough that keeping the loop in one
+place is easier to follow than spreading it across modules. Inside, it is grouped
+into sections: type definitions, configuration tables, save/load, the audio
+synth, the `Runner` scene, the drawing helpers, and the boot and menu wiring.
 
----
+## Runtime model
 
-## 3. The game loop
-
-Phaser calls `Runner.update(_, deltaMs)` once per animation frame. The loop is a
-fixed pipeline; each stage reads/writes scene state and the last stage renders.
+Phaser drives the loop by calling `Runner.update(delta)` once per frame. The
+steps run in a fixed order:
 
 ```mermaid
 flowchart LR
-  A["deltaMs"] --> B["advance time & speed<br/>(distance, difficulty ramp)"]
+  A["delta"] --> B["advance time and speed"]
   B --> C["tick power-up / combo timers"]
-  C --> D["vertical physics<br/>jetpack OR gravity+jump"]
-  D --> E["spawn scheduler<br/>obstacles + pickups"]
-  E --> F["move movers &amp; particles<br/>run collision / collection"]
+  C --> D["vertical physics (jetpack or gravity)"]
+  D --> E["spawn obstacles + pickups"]
+  E --> F["move objects, resolve collisions"]
   F --> G["compute score"]
-  G --> H["render()"]
-  H --> I["updateHud() → DOM"]
+  G --> H["render"]
+  H --> I["update DOM HUD"]
 ```
 
-Key properties:
+Two details worth noting:
 
-- **Delta-clamped** (`min(deltaMs, 42)`) so a stall can't tunnel the player
-  through obstacles.
-- **Deterministic spawning** via a seeded PRNG (`mulberry32(seed)`), so a given
-  seed reproduces the same run (used for shareable challenge links).
-- **Time-based scheduling**: `nextObstacle` / `nextPickup` are timestamps on the
-  `elapsed` clock, not frame counters.
+- The frame delta is clamped, so a hitch can't move an object far enough to skip
+  a collision.
+- Spawns are scheduled against an elapsed-time clock and driven by a seeded PRNG
+  (`mulberry32`). The same seed reproduces the same run, which is what makes the
+  daily and challenge links deterministic.
 
----
+## Rendering
 
-## 4. Rendering pipeline
-
-The world is a **2.5D side-scroller**: a ground line at `y = h·0.8`, the player
-fixed near the left, and everything else moving left. Depth is faked with
-parallax layers and a fixed player camera.
-
-Four Phaser `Graphics` layers are drawn back-to-front every frame (except the
-sky, which only redraws on theme/resize):
+Depth is faked with parallax instead of a real camera. Four canvas layers are
+drawn back to front each frame; the sky only redraws when the theme or window
+size changes.
 
 ```mermaid
 flowchart TB
-  S["gSky — sky gradient + moon (cached)"] --> B["gBack — parallax skyline + road + lane dashes"]
-  B --> O["gObs — obstacles, pickups, particles"]
-  O --> P["gPlayer — the customized runner + jetpack/board FX"]
-  P --> T["Phaser Text (depth 5) — score · combo · hearts/coins · power timers"]
-  T --> DOM["DOM overlay — menus, top bar, mission, toasts"]
+  S["Sky: gradient + moon (cached)"] --> B["Background: parallax skyline, road, lane dashes"]
+  B --> O["Objects: obstacles, pickups, particles"]
+  O --> P["Player: the runner + jetpack / hoverboard FX"]
+  P --> T["HUD text: score, combo, hearts, coins, timers"]
+  T --> DOM["DOM overlay: menus, top bar, mission, toasts"]
 ```
 
-- **Parallax**: a far building band scrolls at `distance·0.18`, the near band at
-  `distance·0.4`, palms/elevated-train and road dashes at their own rates — cheap
-  depth without a camera.
-- **Everything is procedural**: buildings, obstacles, coins, power-up badges,
-  particles and the character are all vector shapes drawn each frame. No sprites,
-  no atlas, no texture loading.
+Everything is vector drawing. Buildings, obstacles, coins, power-up badges,
+particles and the runner are all shapes emitted each frame; there are no sprites
+to load. Parallax comes from scrolling each band at a different fraction of the
+travelled distance.
 
-### The `Pen` abstraction (one character, two surfaces)
+### The Pen abstraction
 
-Character art must appear **in the game** (Phaser `Graphics`) *and* **in the menu
-previews** (independent HTML `<canvas>` 2D contexts). Rather than duplicate the
-drawing, a minimal `Pen` interface abstracts the primitives:
+The runner has to be drawn in two places: inside the game (a Phaser `Graphics`
+object) and in the menu previews (separate HTML canvas 2D contexts). To avoid
+writing that code twice, drawing goes through a small `Pen` interface with a
+handful of primitives. Two implementations back it: one wraps Phaser `Graphics`,
+the other wraps a 2D context.
 
 ```mermaid
 flowchart TB
   DC["drawCharacter(pen, x, footY, scale, char, pose)"]
-  DC --> PEN["Pen interface<br/>circle · rect · rrect · line · tri · ellipse"]
+  DC --> PEN["Pen: circle, rect, rrect, line, tri, ellipse"]
   PEN --> PP["phaserPen(Graphics)"]
-  PEN --> CP["canvasPen(CanvasRenderingContext2D)"]
-  PP --> GAME["in-game player (gPlayer)"]
+  PEN --> CP["canvasPen(2D context)"]
+  PP --> GAME["in-game runner"]
   CP --> PREV["menu / customizer previews"]
 ```
 
-`drawCharacter()` reads a `Char` (gender, skin, hair, hair color, outfit) and a
-`Pose` (run swing, airborne, sliding, landing squash, jetpack) and emits pen
-calls. Swap the pen implementation and the identical figure renders to either
-surface — the customizer preview is guaranteed to match the in-game runner.
+`drawCharacter()` takes a character description (gender, skin tone, hair style and
+color, outfit) and a pose (run cycle, airborne, sliding, landing, jetpack), and
+emits pen calls. Because both surfaces share the code, the customizer preview
+always matches the runner you play.
 
----
+## Physics and collision
 
-## 5. Physics & collision
+Vertical movement is written by hand rather than using Phaser's physics engine.
+That keeps it in step with the custom renderer and gives precise control over
+feel.
 
-Vertical motion is a small hand-rolled model (not Phaser Arcade physics), which
-keeps it fully in sync with the procedural renderer.
+Jumping uses three common techniques: coyote time (a short grace period after
+leaving the ground), input buffering (a tap just before landing still counts),
+and asymmetric gravity (rising is floatier than falling). Double jump and a slide
+complete the moveset. When a jetpack is active, gravity is replaced by a climb to
+a hover height.
 
-### Jump feel
-
-```mermaid
-flowchart TB
-  J["jump() → sets buffer"] --> U{"in update()"}
-  U --> C1["coyote time<br/>(jump shortly after leaving ground)"]
-  U --> C2["jump buffering<br/>(early tap before landing)"]
-  U --> C3["asymmetric gravity<br/>GRAV_UP (floaty rise) &lt; GRAV_DOWN (snappy fall)"]
-  C1 & C2 & C3 --> R["responsive single + double jump"]
-  JET["jetpack active?"] -->|yes| FLY["lerp to hover height,<br/>ignore gravity, spawn flames + sky coins"]
-```
-
-### Collision — forgiving AABB
-
-Obstacles and pickups are `Mover`s that scroll left. Each frame, colliding
-movers are resolved with generous grace so a graze never feels cheap:
+Collisions use axis-aligned boxes with generous margins, so a graze never feels
+unfair.
 
 ```mermaid
 flowchart TB
-  OV{"horizontal overlap?<br/>(shrunk by 15px)"} -->|no| PASS[skip]
+  OV{"horizontal overlap (shrunk)"} -->|no| PASS[skip]
   OV -->|yes| JETC{jetpack?}
-  JETC -->|yes| PASS2["fly over — immune"]
+  JETC -->|yes| PASS2[fly over]
   JETC -->|no| STAR{star?}
-  STAR -->|yes| SMASH["smash / stomp"]
-  STAR -->|no| CLR{"feet above top − 20px?"}
-  CLR -->|yes| MARK["mark cleared<br/>(can't die on the way down)"]
+  STAR -->|yes| SMASH[smash]
+  STAR -->|no| CLR{"above the top edge?"}
+  CLR -->|yes| MARK["mark cleared (safe on descent)"]
   CLR -->|no| GOOMBA{"falling onto a Goomba?"}
-  GOOMBA -->|yes| STOMP["STOMP! +coins, bounce"]
-  GOOMBA -->|no| UNDER{"ducked under a gate?"}
+  GOOMBA -->|yes| STOMP["stomp: coins + bounce"]
+  GOOMBA -->|no| UNDER{"slid under a gate?"}
   UNDER -->|yes| MARK
-  UNDER -->|no| HIT["crash()"]
+  UNDER -->|no| HIT["take a hit"]
 ```
 
-`crash()` implements survivability: **3 hearts**, a hit costs one heart + ~1.6 s
-invincibility, a hoverboard absorbs one hit, a star/jetpack/invincibility window
-ignores hits, and only the final heart ends the run. The per-mover `cleared`
-flag is the key detail — once you're over something you "run over" it instead of
-dying as you descend.
+A run starts with three hearts. A hit costs one heart and grants a brief window
+of invincibility; a hoverboard absorbs one hit; a star or jetpack ignores hits
+entirely; only the last heart ends the run. The per-obstacle `cleared` flag is
+the important detail: once the runner is above an obstacle's top edge, it is
+marked cleared and cannot kill you on the way back down.
 
----
+## Game systems
 
-## 6. Systems reference
-
-| System | How it works |
+| System | Notes |
 | --- | --- |
-| **Spawning** | Time-scheduled from the seeded PRNG. Obstacle rows pick `goomba / gate / cone / barrier` weighted by difficulty; a warm-up delays the first obstacle so you ease in. Pickups roll coins vs. power-ups. |
-| **Power-ups** | Each is a timer on the scene (`jet`, `board`, `star`, `magnet`, `sneaker`, `invuln`) decremented each frame; effects are read in physics/collision/HUD. `mushroom` adds a heart. |
-| **Particles** | A flat `Part[]` pool: landing dust, coin/pickup bursts, jetpack flames, ambient neon specks. Simple Euler integration + fade; drawn via the same `Pen`. |
-| **Combos & score** | Passing/stomping obstacles and grabbing coins refresh a combo timer; `score = distance-based + coins·bonus`. |
-| **Audio** | `Synth` builds tones with WebAudio oscillators (no audio files); started on first interaction to satisfy autoplay policies. |
-| **Themes** | Selecting a location swaps the active `Theme` (sky gradient, building palette, road/accent colors, palms/elevated-train flags). |
+| Spawning | Obstacle rows pick goomba/gate/cone/barrier weighted by difficulty; pickups roll coins against power-ups. A short warm-up delays the first obstacle. |
+| Power-ups | Each is a countdown on the scene (jetpack, hoverboard, star, magnet, sneakers, invincibility). The mushroom adds a heart. Effects are read where they apply. |
+| Particles | A flat array with simple integration and fade, reused for landing dust, pickup bursts, jetpack flames and ambient specks. |
+| Combos / score | Passing or stomping obstacles and grabbing coins refresh a combo timer; score is distance plus coins. |
+| Audio | The synth builds tones from WebAudio oscillators, started on first input to satisfy autoplay rules. |
+| Themes | Choosing a location swaps the active palette and skyline (sky, buildings, road, accent, plus palm / elevated-train flags). |
 
----
+## State and persistence
 
-## 7. Data & persistence
-
-State is intentionally tiny and flat. Config tables are read-only; the only
-mutable persistent value is the `Save`.
+State is small and flat. Configuration tables are read-only; the only persisted
+value is the save.
 
 ```mermaid
 flowchart LR
-  LS["localStorage['avenue-save']"] <-->|loadSave / persist| SAVE["Save { best, bank, runs, difficulty, location, char }"]
-  SAVE --> MENU["Menu UI (stats, selected pills, customizer)"]
-  SAVE -->|start()| RUN["Runner (per-run state)"]
-  RUN -->|finish()| SAVE
-  CFG["DIFFS[] · THEMES[] · palettes"] -. read-only .-> RUN
-  URL["?seed=&amp;beat= (challenge link)"] -.-> RUN
+  LS["localStorage['avenue-save']"] <-->|load / persist| SAVE["Save: best, bank, runs, difficulty, location, char"]
+  SAVE --> MENU["Menu UI: stats, selections, customizer"]
+  SAVE -->|start| RUN["Runner (per-run state)"]
+  RUN -->|finish| SAVE
+  CFG["DIFFS, THEMES, palettes"] -. read-only .-> RUN
+  URL["?seed= &beat= (challenge link)"] -. seed .-> RUN
 ```
 
-- `loadSave()` defensively validates every field (indices clamped, numbers
-  bounded) so corrupt/old storage can't crash a run.
-- A run reads `curDiff` / `curTheme` / `save.char` at `start()`; on `finish()` it
-  writes back `best`, `bank` (coins) and `runs`.
-- Challenge links carry a `seed` (deterministic course) and `beat` (target
-  score) in the URL — no backend required.
+`loadSave()` validates every field (indices clamped, numbers bounded), so old or
+corrupt storage can't crash a run. A run reads the selected difficulty, theme and
+character at start, and writes back the best score, coin bank and run count when
+it ends. Challenge links carry a seed (the course) and a target score in the URL;
+nothing is stored server-side.
 
----
-
-## 8. Build & deployment
+## Build and hosting
 
 ```mermaid
 flowchart LR
-  SRC["src/*.ts + index.html"] -->|"tsc + vite build"| DIST["dist/ (hashed JS/CSS + PWA assets)"]
-  DIST -->|vercel --prod| VERCEL["Vercel CDN"]
-  VERCEL --> USER["Phone / browser"]
-  SW["public/sw.js + manifest"] --> USER
+  SRC["src + index.html"] -->|tsc + vite build| DIST["dist/ (hashed assets + PWA files)"]
+  DIST -->|deploy| HOST["static host / CDN"]
+  HOST --> USER["phone / browser"]
 ```
 
-- **Vite** type-checks and bundles to `dist/`; asset filenames are content-hashed
-  for cache-busting.
-- **PWA**: `manifest.webmanifest` + a service worker enable install-to-home-screen
-  and offline play. `vercel.json` builds with `npm run build` and serves `dist/`.
-- **Stateless hosting**: everything runs client-side, so any static host works;
-  production lives on Vercel at [avenue-run.vercel.app](https://avenue-run.vercel.app).
-
----
-
-## 9. Why these choices
-
-- **Single scene, single file** — the game is small; one readable pipeline beats
-  scattered systems and indirection.
-- **Procedural art + `Pen`** — no asset pipeline, tiny download, infinitely
-  recolorable characters, and one source of truth for the runner across game and
-  UI.
-- **Hand-rolled vertical physics** — precise control over game feel (coyote time,
-  buffering, asymmetric gravity, forgiving hitboxes) that a generic physics body
-  makes awkward.
-- **Data-driven difficulty/themes** — new difficulties or locations are new rows
-  in a table, not new code paths.
-- **Client-only + seeded RNG** — zero backend, yet daily/challenge runs are
-  reproducible and shareable via a URL.
+Vite type-checks and bundles to `dist/` with content-hashed filenames. A
+manifest and service worker make it installable and playable offline. Because the
+game is client-only, any static host works; `vercel.json` builds with
+`npm run build` and serves the static output.
