@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "multiplayer:dev": "npm --prefix multiplayer-server run dev",
+    "multiplayer:deploy": "npm --prefix multiplayer-server run deploy",
+    "multiplayer:test": "npm --prefix multiplayer-server test"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

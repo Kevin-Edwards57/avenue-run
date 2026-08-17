@@ -37,6 +37,14 @@
         </div>
 
         <div class="panel">
+          <p class="label">HOW DO YOU WANT TO RUN?</p>
+          <div class="picks two">
+            <button id="modeSolo" class="pick loc on"><b>🏃 SINGLE PLAYER</b><small>Beat your best score</small></button>
+            <button id="modeVersus" class="pick loc"><b>👥 2 PLAYER</b><small>Race a friend online</small></button>
+          </div>
+        </div>
+
+        <div class="panel">
           <p class="label">DIFFICULTY</p>
           <div id="diffPick" class="picks"></div>
         </div>
@@ -53,7 +61,7 @@
 
         <button id="play" class="primary">RUN NOW <span>›</span></button>
         <div id="challengeBanner" class="challenge" hidden></div>
-        <p class="controls">Swipe / arrows to change lanes · up to jump · down to roll · P to pause</p>
+        <p class="controls">Tap / Space to jump · double-tap to double jump · swipe down / ↓ to slide · P to pause</p>
       </section>
 
       <section id="customizer" class="sheet" hidden>
@@ -79,6 +87,67 @@
         <button id="again" class="primary">RUN IT BACK <span>↻</span></button>
         <div class="buttonrow"><button id="share" class="secondary">SHARE SCORE</button><button id="home" class="secondary">HOME</button></div>
       </section>
+
+      <!-- ============ MULTIPLAYER SHEETS ============ -->
+      <section id="mp" class="sheet" hidden>
+        <p class="eyebrow">MULTIPLAYER</p>
+        <h2 class="small">PLAY WITH<br>A FRIEND</h2>
+        <button id="mpCreate" class="primary">CREATE RACE <span>›</span></button>
+        <div class="panel" style="margin-top:16px">
+          <p class="label">JOIN A RACE</p>
+          <div class="joinrow">
+            <input id="mpCodeInput" class="codeinput" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+            <button id="mpJoin" class="secondary joinbtn">JOIN</button>
+          </div>
+        </div>
+        <button id="mpBack" class="secondary">BACK</button>
+      </section>
+
+      <section id="mpLobby" class="sheet" hidden>
+        <p class="eyebrow">INVITE A FRIEND</p>
+        <p class="label">ROOM CODE</p>
+        <div id="mpCode" class="roomcode">–––––</div>
+        <div class="buttonrow">
+          <button id="mpCopyCode" class="secondary">COPY CODE</button>
+          <button id="mpCopyInvite" class="secondary">COPY INVITE</button>
+        </div>
+        <div id="mpLobbyStatus" class="lobby-status">Waiting for player…</div>
+        <div class="lobby-dots">
+          <div class="dot on"><span>●</span> YOU</div>
+          <div id="mpFriendDot" class="dot"><span>○</span> FRIEND</div>
+        </div>
+        <button id="mpCancel" class="secondary">CANCEL</button>
+      </section>
+
+      <section id="mpResult" class="sheet" hidden>
+        <p class="eyebrow">RACE COMPLETE</p>
+        <h2 id="mpResultTitle" class="small">YOU WIN</h2>
+        <div class="vs-cols">
+          <div class="vs-col you"><small>YOU</small><b id="mpYouScore">0</b><span id="mpYouCoins">0 COINS</span><em id="mpYouPlace">1ST</em></div>
+          <div class="vs-col"><small>FRIEND</small><b id="mpOppScore">0</b><span id="mpOppCoins">0 COINS</span><em id="mpOppPlace">2ND</em></div>
+        </div>
+        <button id="mpAgain" class="primary">RUN IT BACK <span>↻</span></button>
+        <div id="mpRematchNote" class="lobby-status" hidden>Waiting for friend…</div>
+        <div class="buttonrow"><button id="mpShare" class="secondary">SHARE RESULT</button><button id="mpHome" class="secondary">HOME</button></div>
+      </section>
+
+      <section id="mpStatus" class="sheet" hidden>
+        <p class="eyebrow" id="mpStatusEyebrow">CONNECTING</p>
+        <h2 class="small" id="mpStatusTitle">…</h2>
+        <p id="mpStatusMsg" class="statusmsg"></p>
+        <button id="mpStatusBtn" class="primary">BACK TO HOME <span>›</span></button>
+      </section>
+
+      <div id="mpCountdown" class="mp-count" hidden><span id="mpCountNum">3</span></div>
+
+      <div id="pauseMenu" class="overlay" hidden>
+        <div class="sheet pause-card">
+          <p class="eyebrow">PAUSED</p>
+          <h2 class="small">TAKE A<br>BREATHER</h2>
+          <button id="resumeBtn" class="primary">RESUME <span>›</span></button>
+          <div class="buttonrow"><button id="restartBtn" class="secondary">RESTART</button><button id="quitBtn" class="secondary">MAIN MENU</button></div>
+        </div>
+      </div>
 
       <aside id="mission" hidden><small>RUN MISSION</small><b id="missionText">Reach 1,000 points</b><div><span id="missionBar"></span></div></aside>
       <div id="toast" role="status"></div>

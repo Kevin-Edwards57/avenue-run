@@ -31,6 +31,9 @@ to run it full screen.
 - Three hearts and forgiving hitboxes, so a graze won't instantly end a run; a
   hit costs a heart and gives you a brief window of invincibility.
 - Combos, missions, coins, and a best score and coin bank saved locally.
+- **Two-player online races**: create a private room, share the code or invite
+  link, and race a friend on the same deterministic course — first to the finish
+  wins. See [MULTIPLAYER.md](MULTIPLAYER.md).
 - Installable as a PWA with offline support and shareable challenge links.
 
 ## Controls
@@ -64,7 +67,9 @@ cones, and slide under the brick gates.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the system architecture: the game
 loop, the rendering pipeline, the collision model, and how state flows between
-the menu, the scene and local storage.
+the menu, the scene and local storage. For the 2-player netcode (Cloudflare
+Durable Objects, the deterministic course, and the wire protocol) see
+[MULTIPLAYER.md](MULTIPLAYER.md).
 
 ## Development
 

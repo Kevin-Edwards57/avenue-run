@@ -1,5 +1,11 @@
 import Phaser from "phaser";
 import "./style.css";
+import { MULTIPLAYER_RACE_DISTANCE, SNAPSHOT_HZ } from "../shared/protocol";
+import type { ClientMessage, PlayerSnapshot, CharacterConfig, AnimState } from "../shared/protocol";
+import { OpponentInterpolator } from "./multiplayer/OpponentInterpolator";
+import type { OpponentView } from "./multiplayer/OpponentInterpolator";
+import { VersusController } from "./multiplayer/versus";
+import type { RunnerBridge } from "./multiplayer/versus";
 
 /* ------------------------------------------------------------------ *
  * Avenue Run — a neon side-scrolling endless runner with a
@@ -163,6 +169,15 @@ class Runner extends Phaser.Scene {
   magnet = 0; sneaker = 0; board = 0; star = 0; invuln = 0; lives = 3; jet = 0; jetCoin = 0;
   synth = new Synth();
 
+  // ----- versus (2-player) state; untouched/ignored in solo -----
+  mode: "solo" | "versus" = "solo";
+  finishDist = 0; localFinished = false; oppFinished = false;
+  courseRng = mulberry32(1); courseNextObs = 0; courseNextPick = 0;
+  oppInterp = new OpponentInterpolator(); oppView: OpponentView | null = null;
+  oppChar: Char = save.char; mpSend: ((m: ClientMessage) => void) | null = null;
+  netAcc = 0; netTick = 0;
+  youTag!: Phaser.GameObjects.Text; oppTag!: Phaser.GameObjects.Text;
+
   constructor() { super("runner"); gameScene = this; }
 
   create() {
@@ -175,6 +190,8 @@ class Runner extends Phaser.Scene {
     this.coinText = mk(16, 64, "19px", "#ffe35a", 0); // left, below the header
     this.powText = mk(this.w / 2, this.h - 40, "13px", "#67efff");
     this.prompt = this.add.text(this.w / 2, this.h * 0.46, "", { fontFamily: "system-ui", fontStyle: "bold", fontSize: "17px", color: "#fff", align: "center", stroke: "#0a0716", strokeThickness: 5 }).setOrigin(.5).setDepth(5).setAlpha(0);
+    this.youTag = this.add.text(0, 0, "YOU", { fontFamily: "system-ui", fontStyle: "bold", fontSize: "11px", color: "#ff3f8e" }).setOrigin(1, 0.5).setDepth(6).setVisible(false);
+    this.oppTag = this.add.text(0, 0, "FRIEND", { fontFamily: "system-ui", fontStyle: "bold", fontSize: "11px", color: "#67efff" }).setOrigin(1, 0.5).setDepth(6).setVisible(false);
 
     // Mobile: tap = jump, swipe down = slide. Decide on release so a
     // downward swipe never fires a jump first.
@@ -205,6 +222,8 @@ class Runner extends Phaser.Scene {
   }
 
   start(seed: number) {
+    this.mode = "solo"; this.localFinished = false; this.oppView = null;
+    this.youTag.setVisible(false); this.oppTag.setVisible(false);
     this.theme = curTheme; this.diff = curDiff; this.char = save.char;
     this.seed = seed >>> 0; lastSeed = this.seed; this.rng = mulberry32(this.seed);
     this.movers = []; this.parts = []; this.gObs.clear();
@@ -214,7 +233,7 @@ class Runner extends Phaser.Scene {
     this.py = 0; this.vy = 0; this.jumps = 0; this.sliding = 0; this.footPhase = 0; this.coyote = 0; this.buffer = 0; this.land = 0;
     this.score = 0; this.coins = 0; this.combo = 1; this.maxCombo = 1; this.comboClock = 0;
     this.magnet = 0; this.sneaker = 0; this.board = 0; this.star = 0; this.invuln = 0; this.lives = 3; this.jet = 0; this.jetCoin = 0;
-    menu.hidden = true; result.hidden = true; mission.hidden = false; walletEl.hidden = true;
+    menu.hidden = true; result.hidden = true; mission.hidden = false; walletEl.hidden = true; $("pauseMenu").hidden = true;
     this.drawSky();
     this.prompt.setText("TAP TO JUMP\n↓ / bottom = SLIDE").setAlpha(1);
     this.tweens.killTweensOf(this.prompt);
@@ -225,7 +244,9 @@ class Runner extends Phaser.Scene {
   /* ----- input ------------------------------------------------------ */
   jump() {
     if (!this.running || this.paused) return;
+    if (this.mode === "versus" && this.localFinished) return;
     this.buffer = BUFFER; // consumed in update() with coyote-time + double-jump
+    if (this.mode === "versus") this.mpSend?.({ type: "input", tick: this.netTick, action: "jump" });
   }
   doJump(n: number) {
     this.vy = JUMP_V * (this.sneaker > 0 ? 1.22 : 1) * (n === 2 ? 0.9 : 1);
@@ -234,18 +255,43 @@ class Runner extends Phaser.Scene {
   }
   slide() {
     if (!this.running || this.paused) return;
+    if (this.mode === "versus" && this.localFinished) return;
     if (this.py < 0) { this.vy = 700; } // fast-fall
     else { this.sliding = 0.55; this.synth.note(180, .04, .08); }
+    if (this.mode === "versus") this.mpSend?.({ type: "input", tick: this.netTick, action: "slide" });
   }
   togglePause() {
-    if (!this.running) return;
-    this.paused = !this.paused; this.paused ? this.synth.stop() : this.synth.start();
-    toast(this.paused ? "PAUSED · P to resume" : "BACK ON THE AVE");
+    if (!this.running || this.mode === "versus") return; // can't pause a live race
+    this.paused = !this.paused;
+    this.paused ? this.synth.stop() : this.synth.start();
+    $("pauseMenu").hidden = !this.paused;
+  }
+  quitToMenu() {
+    $("pauseMenu").hidden = true;
+    mission.hidden = true; result.hidden = true; walletEl.hidden = false;
+    menu.hidden = false;
+    this.clearToMenu();
+  }
+  /** Reset the canvas to a clean menu background (no frozen run frame bleeding through sheets). */
+  clearToMenu() {
+    this.running = false; this.paused = false; this.mode = "solo"; this.localFinished = false;
+    this.synth.stop();
+    this.gBack.clear(); this.gObs.clear(); this.gPlayer.clear();
+    this.prompt.setAlpha(0);
+    this.youTag.setVisible(false); this.oppTag.setVisible(false);
+    this.scoreText.setText(""); this.comboText.setText(""); this.coinText.setText(""); this.powText.setText("");
+    this.drawSky();
   }
 
   /* ----- main loop -------------------------------------------------- */
   update(_: number, deltaMs: number) {
     if (!this.running || this.paused) return;
+    if (this.mode === "versus" && this.localFinished) {
+      // crossed the line / wiped out: just watch the opponent finish
+      this.oppView = this.oppInterp.sample() ?? this.oppView;
+      this.render(); this.updateHud();
+      return;
+    }
     const dt = Math.min(deltaMs, 42) / 1000;
     this.elapsed += deltaMs;
     this.speed = Math.min(this.diff.top, this.diff.base + this.diff.accel * (this.elapsed / 1000));
@@ -300,16 +346,20 @@ class Runner extends Phaser.Scene {
       if (p.life <= 0 || p.x < -40) this.parts.splice(i, 1);
     }
 
-    // spawn
-    if (this.elapsed > this.nextObstacle) {
-      this.spawnObstacle();
-      // keep a floor so obstacles never clump into an impossible wall
-      this.nextObstacle += Math.max(620, this.diff.gap - this.speed * 0.25) + this.rng() * 460;
-    }
-    if (this.elapsed > this.nextPickup) {
-      const r = this.rng();
-      this.spawn(r > .94 ? "star" : r > .88 ? "jetpack" : r > .82 ? "mushroom" : r > .74 ? "board" : r > .66 ? "magnet" : r > .58 ? "sneaker" : "coin", 40 + this.rng() * 120);
-      this.nextPickup += 520 + this.rng() * 640;
+    // spawn — versus uses a distance-keyed deterministic course (identical on both clients)
+    if (this.mode === "versus") {
+      this.spawnVersusCourse();
+    } else {
+      if (this.elapsed > this.nextObstacle) {
+        this.spawnObstacle();
+        // keep a floor so obstacles never clump into an impossible wall
+        this.nextObstacle += Math.max(620, this.diff.gap - this.speed * 0.25) + this.rng() * 460;
+      }
+      if (this.elapsed > this.nextPickup) {
+        const r = this.rng();
+        this.spawn(r > .94 ? "star" : r > .88 ? "jetpack" : r > .82 ? "mushroom" : r > .74 ? "board" : r > .66 ? "magnet" : r > .58 ? "sneaker" : "coin", 40 + this.rng() * 120);
+        this.nextPickup += 520 + this.rng() * 640;
+      }
     }
 
     // move + collide
@@ -334,6 +384,15 @@ class Runner extends Phaser.Scene {
     }
 
     this.score = Math.floor(this.distance / 9) + this.coins * 6;
+
+    // versus networking: broadcast our state, watch theirs, detect the finish line
+    if (this.mode === "versus") {
+      this.oppView = this.oppInterp.sample() ?? this.oppView;
+      this.netAcc += dt;
+      if (this.netAcc >= 1 / SNAPSHOT_HZ) { this.netAcc = 0; this.sendSnapshot(); }
+      if (!this.localFinished && this.distance >= this.finishDist) this.localVersusFinish(true);
+    }
+
     this.render();
     this.updateHud();
   }
@@ -411,6 +470,7 @@ class Runner extends Phaser.Scene {
   }
 
   finish() {
+    if (this.mode === "versus") { this.localVersusFinish(false); return; } // wiped out — server decides the winner
     if (!this.running) return;
     this.running = false; this.synth.stop();
     lastScore = this.score + (this.coins >= 10 ? 100 : 0);
@@ -425,9 +485,94 @@ class Runner extends Phaser.Scene {
     this.cameras.main.shake(230, .015);
   }
 
+  /* ================= VERSUS (2-player) ============================== */
+  prepareVersus(cfg: { seed: number; difficulty: string; location: string; myChar: CharacterConfig; oppChar: CharacterConfig; send: (m: ClientMessage) => void }) {
+    this.mode = "versus";
+    this.theme = themeOf(cfg.location); this.diff = diffOf(cfg.difficulty);
+    this.char = cfg.myChar as Char; this.oppChar = cfg.oppChar as Char;
+    this.mpSend = cfg.send;
+    this.seed = cfg.seed >>> 0; lastSeed = this.seed;
+    this.rng = mulberry32((this.seed ^ 0x9e3779b9) >>> 0);  // cosmetic stream (particles), per-client
+    this.courseRng = mulberry32(this.seed);                 // shared deterministic course
+    this.finishDist = MULTIPLAYER_RACE_DISTANCE;
+    this.oppInterp = new OpponentInterpolator(); this.oppView = null;
+    this.oppFinished = false; this.localFinished = false; this.netAcc = 0; this.netTick = 0;
+    this.movers = []; this.parts = []; this.gObs.clear();
+    this.elapsed = 0; this.distance = 0; this.speed = this.diff.base; this.ambient = 0;
+    this.py = 0; this.vy = 0; this.jumps = 0; this.sliding = 0; this.footPhase = 0; this.coyote = 0; this.buffer = 0; this.land = 0;
+    this.score = 0; this.coins = 0; this.combo = 1; this.maxCombo = 1; this.comboClock = 0;
+    this.magnet = 0; this.sneaker = 0; this.board = 0; this.star = 0; this.invuln = 0; this.lives = 3; this.jet = 0; this.jetCoin = 0;
+    this.courseNextObs = 340; this.courseNextPick = 220;
+    this.running = false; this.paused = false;
+    menu.hidden = true; result.hidden = true; mission.hidden = true; walletEl.hidden = true; $("pauseMenu").hidden = true;
+    this.drawSky(); this.render(); this.updateHud();
+  }
+  startVersusRace() { if (this.mode === "versus") { this.running = true; this.synth.start(); } }
+  endVersus() { if (this.mode === "versus") { this.running = false; this.synth.stop(); } }
+  pushOpponentSnapshot(s: PlayerSnapshot) { this.oppInterp.push(s); if (s.animation === "dead") this.oppFinished = true; }
+  applyOpponentInput(_a: "jump" | "slide") { /* snapshots already carry animation state */ }
+  setOpponentFinished(f: boolean) { this.oppFinished = f; }
+  getFinalStats() { return { score: this.score, coins: this.coins, maxCombo: this.maxCombo, distance: Math.round(this.distance), lives: this.lives }; }
+
+  localVersusFinish(reachedLine: boolean) {
+    if (this.localFinished) return;
+    this.localFinished = true; this.synth.stop();
+    this.mpSend?.({ type: "finish", distance: Math.round(this.distance), score: this.score, coins: this.coins, maxCombo: this.maxCombo, lives: reachedLine ? Math.max(1, this.lives) : 0 });
+  }
+  private myAnim(): AnimState {
+    if (this.lives <= 0) return "dead";
+    if (this.sliding > 0) return "slide";
+    if (this.py < -2) return this.jumps >= 2 ? "double" : "jump";
+    return "run";
+  }
+  private sendSnapshot() {
+    this.netTick++;
+    this.mpSend?.({ type: "snapshot", snap: { tick: this.netTick, distance: Math.round(this.distance), y: Math.round(this.py), score: this.score, coins: this.coins, lives: this.lives, maxCombo: this.maxCombo, animation: this.myAnim() } });
+  }
+  private spawnVersusCourse() {
+    while (this.distance >= this.courseNextObs) {
+      this.spawnObstacle(this.courseRng);
+      this.courseNextObs += Math.max(240, 320 - this.speed * 0.05) + this.courseRng() * 200;
+    }
+    while (this.distance >= this.courseNextPick) {
+      const r = this.courseRng();
+      const kind: Kind = r > .94 ? "star" : r > .88 ? "jetpack" : r > .82 ? "mushroom" : r > .74 ? "board" : r > .66 ? "magnet" : r > .58 ? "sneaker" : "coin";
+      this.spawn(kind, 40 + this.courseRng() * 120);
+      this.courseNextPick += 300 + this.courseRng() * 260;
+    }
+  }
+  private drawOpponent(pen: Pen) {
+    const v = this.oppView; if (!v) return;
+    const rel = v.distance - this.distance;
+    const lo = -(this.px - 34), hi = this.w - this.px - 34;
+    const dx = Math.max(lo, Math.min(hi, rel * 0.6));
+    const ox = this.px + dx;
+    const ofoot = this.ground + Math.max(-260, Math.min(0, v.y));
+    pen.ellipse(ox, ofoot - 30, 30, 46, 0x67efff, 0.12);        // friend glow
+    pen.ellipse(ox, this.ground + 3, 24, 7, 0x67efff, 0.4);     // ground marker
+    drawCharacter(pen, ox, ofoot, 1, this.oppChar, {
+      swing: Math.sin(this.footPhase + 1.6), roll: v.animation === "slide",
+      airborne: v.y < -2, board: false, accent: 0x67efff,
+    });
+    // off-screen indicator arrow
+    if (dx <= lo + 1) pen.tri(this.px - (this.px - 12), ofoot - 40, this.px - (this.px - 30), ofoot - 50, this.px - (this.px - 30), ofoot - 30, 0x67efff, 0.9);
+    else if (dx >= hi - 1) pen.tri(this.w - 12, ofoot - 40, this.w - 30, ofoot - 50, this.w - 30, ofoot - 30, 0x67efff, 0.9);
+  }
+  private drawVersusHud(pen: Pen) {
+    const bw = 180, x0 = this.w / 2 - 88, y = 92, h = 7;
+    const myP = Math.min(1, this.distance / this.finishDist);
+    const opP = Math.min(1, (this.oppView?.distance ?? 0) / this.finishDist);
+    pen.rrect(x0, y, bw, h, 3, 0x000000, 0.45);
+    pen.rrect(x0, y, Math.max(3, bw * myP), h, 3, this.theme.accent, 1);
+    pen.rrect(x0, y + 12, bw, h, 3, 0x000000, 0.45);
+    pen.rrect(x0, y + 12, Math.max(3, bw * opP), h, 3, 0x67efff, 1);
+    pen.circle(x0 + bw + 8, y + 3.5, 4, 0xffe35a, this.localFinished ? 1 : 0.25);       // finish flag (you)
+    pen.circle(x0 + bw + 8, y + 15.5, 4, 0xffe35a, this.oppFinished ? 1 : 0.25);         // finish flag (friend)
+  }
+
   /* ----- spawn ------------------------------------------------------ */
-  spawnObstacle() {
-    const r = this.rng();
+  spawnObstacle(rng: () => number = this.rng) {
+    const r = rng();
     let kind: Kind;
     if (r < this.diff.goomba) kind = "goomba";
     else if (r < this.diff.goomba + 0.14) kind = "gate";      // slide-under, kept rare
@@ -457,6 +602,11 @@ class Runner extends Phaser.Scene {
     if (this.sneaker) p.push(`SNEAKERS ${Math.ceil(this.sneaker)}s`);
     if (this.board) p.push(`BOARD ${Math.ceil(this.board)}s`);
     this.powText.setText(p.join("   "));
+    if (this.mode === "versus") {
+      this.youTag.setVisible(true).setPosition(this.w / 2 - 96, 96);
+      this.oppTag.setVisible(true).setPosition(this.w / 2 - 96, 108);
+      return;
+    }
     const goal = 500 + Math.min(save.runs, 8) * 125; // stays attainable
     $("missionText").textContent = `Reach ${goal.toLocaleString()} points`;
     $("missionBar").style.width = `${Math.min(100, (this.score / goal) * 100)}%`;
@@ -480,8 +630,10 @@ class Runner extends Phaser.Scene {
     const og = this.gObs; og.clear();
     const pen = phaserPen(og);
     for (const m of this.movers) this.drawMover(og, pen, m);
+    if (this.mode === "versus") this.drawOpponent(pen);
     this.drawParts(pen);
     this.drawPlayer();
+    if (this.mode === "versus") this.drawVersusHud(pen);
   }
 
   drawSkyline(g: Phaser.GameObjects.Graphics) {
@@ -818,8 +970,7 @@ new Phaser.Game({
 /* ----- menu wiring -------------------------------------------------- */
 $("play").onclick = () => gameScene?.start(challengeSeed || Math.floor(Math.random() * 1e9));
 $("again").onclick = () => gameScene?.start(lastSeed);
-$("home").onclick = () => { result.hidden = true; menu.hidden = false; };
-$("pause").onclick = () => gameScene?.togglePause();
+$("home").onclick = () => { result.hidden = true; menu.hidden = false; gameScene?.clearToMenu(); };
 $("sound").onclick = () => { soundOn = !soundOn; localStorage.setItem("avenue-sound", soundOn ? "on" : "off"); $("sound").textContent = soundOn ? "♫" : "×"; toast(soundOn ? "SOUND ON" : "SOUND OFF"); };
 $("share").onclick = async () => {
   const url = new URL(location.href); url.search = `?seed=${lastSeed}&beat=${lastScore}`;
@@ -896,6 +1047,33 @@ $("customize").onclick = () => { rebuildCustomizer(); refreshChar(); menu.hidden
 $("saveChar").onclick = () => { customizer.hidden = true; menu.hidden = false; refreshChar(); toast("RUNNER SAVED"); };
 refreshChar();
 
+/* ----- multiplayer wiring ------------------------------------------ */
+const versusBridge: RunnerBridge = {
+  getMyChar: () => save.char,
+  getSelection: () => ({ difficulty: curDiff.key, location: curTheme.key }),
+  prepareVersus: (cfg) => gameScene?.prepareVersus(cfg),
+  startVersusRace: () => gameScene?.startVersusRace(),
+  pushOpponentSnapshot: (s) => gameScene?.pushOpponentSnapshot(s),
+  applyOpponentInput: (a) => gameScene?.applyOpponentInput(a),
+  setOpponentFinished: (f) => gameScene?.setOpponentFinished(f),
+  endVersus: () => gameScene?.endVersus(),
+  getFinalStats: () => gameScene?.getFinalStats() ?? { score: 0, coins: 0, maxCombo: 1, distance: 0, lives: 0 },
+};
+const versus = new VersusController(versusBridge, () => { gameScene?.clearToMenu(); menu.hidden = false; });
+$("modeVersus").onclick = () => versus.openMenu();
+$("modeSolo").onclick = () => { $("modeSolo").classList.add("on"); $("modeVersus").classList.remove("on"); };
+versus.checkInviteLink(); // auto-join if the page was opened with ?room=CODE
+
+// pause / pause-menu wiring
+$("pause").onclick = () => {
+  if (!gameScene?.running) return;
+  if (gameScene.mode === "versus") versus.leaveRace();  // forfeit an online race
+  else gameScene.togglePause();
+};
+$("resumeBtn").onclick = () => gameScene?.togglePause();
+$("restartBtn").onclick = () => { $("pauseMenu").hidden = true; gameScene?.start(lastSeed || Math.floor(Math.random() * 1e9)); };
+$("quitBtn").onclick = () => gameScene?.quitToMenu();
+
 /* ----- PWA / lifecycle ---------------------------------------------- */
 let installPrompt: (Event & { prompt: () => Promise<void> }) | undefined;
 const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -904,6 +1082,7 @@ window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); instal
 if (isIos && !isStandalone) { $("install").hidden = false; $("install").textContent = "Add to Home"; }
 $("install").onclick = async () => { if (installPrompt) { await installPrompt.prompt(); $("install").hidden = true; } else toast("iPhone: Share → Add to Home Screen"); };
 if ("serviceWorker" in navigator && import.meta.env.PROD) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
-document.addEventListener("visibilitychange", () => { if (document.hidden && gameScene?.running && !gameScene.paused) gameScene.togglePause(); });
+// Auto-pause when backgrounded — solo only; a live race must not pause (the opponent keeps going).
+document.addEventListener("visibilitychange", () => { if (document.hidden && gameScene?.running && !gameScene.paused && gameScene.mode === "solo") gameScene.togglePause(); });
 window.addEventListener("offline", () => toast("OFFLINE · Avenue Run is ready"));
 window.addEventListener("online", () => toast("BACK ONLINE"));
